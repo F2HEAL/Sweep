@@ -1,0 +1,11 @@
+Board:
+  Id: EXPLORE_8_CHAN_BOARD
+  Master: null
+  Mac: "00:13:43:A1:84:FE"
+  File: null
+  Serial: null
+  Keep_ble_alive: false
+
+VHP:
+#  Serial: "/dev/ttyACM0"
+  Serial: "COM8" #WINDOWS
