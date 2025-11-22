@@ -1,0 +1,11 @@
+Board:
+  Id: PLAYBACK_FILE_BOARD
+  Master: FREEEEG32_BOARD
+  Mac: null
+  File: /tmp/251106-2056_FREEEEG32_BOARD_c1_f28_v100.csv
+  Serial: null
+  Keep_ble_alive: false
+
+VHP:
+  Serial: "/dev/ttyACM0"
+#  Serial: "COM8" #WINDOWS
