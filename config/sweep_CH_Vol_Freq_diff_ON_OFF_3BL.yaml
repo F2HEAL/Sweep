@@ -11,14 +11,14 @@ Volume:
 Frequency:
   Start: 22
   End: 36
-  Steps: 2
+  Steps: 4
 
 Baselines:
-  Baseline_1: 60 # Time in seconds that the EEG measurement starts recording baseline1 | VHP switched OFF → ON
-  Baseline_2: 60 # Time in seconds that the EEG measurement starts recording baseline2 | VHP ON, STIM ON, no contact
-  Baseline_3: 60 # Time in seconds that the EEG measurement starts recording baseline3 | VHP ON, STIM ON, contact | pre-stimulation baseline before the sweep 
+  Baseline_1: 2 # Time in seconds that the EEG measurement starts recording baseline1 | VHP switched OFF → ON
+  Baseline_2: 2 # Time in seconds that the EEG measurement starts recording baseline2 | VHP ON, STIM ON, no contact
+  Baseline_3: 2 # Time in seconds that the EEG measurement starts recording baseline3 | VHP ON, STIM ON, contact | pre-stimulation baseline before the sweep 
 
 Measurements:
-  Number: 6 # Number of measurements for each vol/freq combination
-  Duration_on: 10 # Duration in seconds of each measurement ON period
-  Duration_off: 10 # Duration in seconds of each measurement OFF period
+  Number: 5 # Number of measurements for each vol/freq combination
+  Duration_on: 5 # Duration in seconds of each measurement ON period
+  Duration_off: 5 # Duration in seconds of each measurement OFF period

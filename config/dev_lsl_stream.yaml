@@ -1,0 +1,12 @@
+# dev_lsl_stream.yaml
+Board:
+  Id: STREAMING_BOARD
+  Master: null
+  Mac: null
+  File: null
+  Serial: null
+  Keep_ble_alive: false
+  StreamName: "SynAmpsRT"  # Add this line - name of your LSL stream
+  
+VHP:
+  Serial: "COM8" #WINDOWS - Keep your VHP settings
