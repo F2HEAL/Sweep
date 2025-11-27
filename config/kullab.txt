@@ -1,0 +1,12 @@
+edit: dev_lsl_stream.yaml
+Board:
+  Id: STREAMING_BOARD
+  Master: null
+  Mac: null
+  File: null
+  Serial: null
+  Keep_ble_alive: false
+  StreamName: "SynAmpsRT xxxxxx"  # Add this line - name of your LSL stream
+
+cmd:
+python sweep_CH_Vol_Freq_diff_ON_OFF_3BL_progi_lsl.py -m ./config/sweep_CH_Vol_Freq_diff_ON_OFF_3BL.yaml -d ./config/dev_lsl_stream.yaml
