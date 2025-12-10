@@ -1,4 +1,5 @@
 """
+4572b9490b92dbcddfef8771c5f2fafda0e7bfc3
 Performs EEG measurements following the sweep protocol
 
 Usage: python sweep_lsl.py  -m config/sweep_dev.yaml -d config/dev_lsl_stream.yaml
