@@ -4,7 +4,7 @@ Board:
   Mac: null
   File: null
 #  Serial: "/dev/ttyACM1" #LINUX
-  Serial: "COM10" #WINDOWS
+  Serial: "COM3" #WINDOWS
   Keep_ble_alive: false
   
 VHP:
