@@ -332,32 +332,8 @@ def do_measurement(
         volume: Target VHP volume.
         global_counter: Mutable global step counter.
         global_total: Total steps in the sweep.
-        global_start_time: Start time of the entire sweep.
+        global_start_time: Start time of the entire sweep (time.perf_counter()).
     """
-
-    def format_time(sec: float) -> str:
-        """Formats seconds into human-readable time."""
-        total_sec: int = int(sec)
-        if total_sec < 60:
-            return f"{total_sec}s"
-        return f"{total_sec//60}m{total_sec%60:02d}s"
-
-    def progress_bar(
-        prefix: str, current: int, total: int, start_time: float, length: int = PROGRESS_BAR_LENGTH
-    ) -> None:
-        """Displays a progress bar with ETA."""
-        pct: float = current / total
-        filled: int = int(pct * length)
-        bar: str = "█" * filled + "-" * (length - filled)
-        elapsed: float = time.time() - start_time
-        eta: float = elapsed / current * (total - current) if current > 0 else 0
-        sys.stdout.write(
-            f"\r{prefix} |{bar}| {pct*100:5.1f}%"
-            f"  ETA: {format_time(eta)}"
-            f"  Elapsed: {format_time(elapsed)}"
-        )
-        sys.stdout.flush()
-
     logging.info(f"Measuring: CH={channel}, FREQ={frequency}, VOL={volume}")
     
     recordings_dir: Path = Path("./Recordings")
@@ -375,7 +351,7 @@ def do_measurement(
         writer.writerow(header)
         
         # ---------------------------------------------------------
-        # Baseline 3 (with progress bar + ETA)
+        # Baseline 3 (Contact)
         # ---------------------------------------------------------
         logging.info("Baseline 3 (contact) recording...")
         record_to_csv(inlet, float(config.baseline_3), writer, marker=333)
@@ -385,11 +361,10 @@ def do_measurement(
         on_dur: float = config.measurements_duration_on
         off_dur: float = config.measurements_duration_off
 
-        print(f"\nStim cycles: {cycles} cycles (ON={on_dur}s, OFF={off_dur}s)\n")
+        logging.info(f"Stim cycles: {cycles} cycles (ON={on_dur}s, OFF={off_dur}s)")
 
         for cycle in range(1, cycles + 1):
             # ON
-            print(f"Cycle {cycle}/{cycles} — ON period")
             record_to_csv(inlet, on_dur, writer, marker=0)
             com.start_stream()
             
@@ -397,12 +372,12 @@ def do_measurement(
             com.stop_stream()
 
             # OFF
-            print(f"Cycle {cycle}/{cycles} — OFF period")
             record_to_csv(inlet, off_dur, writer, marker=11)
 
             global_counter[0] += 1
-            progress_bar("Global sweep", global_counter[0], global_total, global_start_time)
-            print("\n")
+            render_progress_bar("Global sweep", global_counter[0], global_total, global_start_time)
+        
+        print("") # Clear line after per-block cycles
 
 
 # --------------------------------------------------------------------
@@ -456,9 +431,36 @@ def write_metadata(
         f.write(f"Baseline 2 (VHP ON, STIM ON, no contact): {fname2}\n")
 
 
-# --------------------------------------------------------------------
-# ETA + PROGRESS FUNCTIONS
-# --------------------------------------------------------------------
+def render_progress_bar(
+    prefix: str, current: int, total: int, start_time: float, length: int = PROGRESS_BAR_LENGTH
+) -> None:
+    """
+    Displays a unified progress bar with an ETA.
+
+    Args:
+        prefix: Label for the progress bar.
+        current: Current step index.
+        total: Total number of steps.
+        start_time: Operation start timestamp (from time.perf_counter()).
+        length: Character length of the bar.
+    """
+    if total <= 0:
+        return
+
+    percent: float = min(1.0, current / total)
+    filled: int = int(length * percent)
+    bar: str = "█" * filled + "-" * (length - filled)
+
+    elapsed: float = time.perf_counter() - start_time
+    rate: float = elapsed / current if current > 0 else 0
+    eta: float = rate * (total - current) if current > 0 else 0
+
+    sys.stdout.write(
+        f"\r{prefix} |{bar}| {percent*100:6.2f}%"
+        f"  ETA: {format_time_hms(eta)}"
+        f"  Elapsed: {format_time_hms(elapsed)}"
+    )
+    sys.stdout.flush()
 
 
 def format_time_hms(seconds: float) -> str:
@@ -477,35 +479,6 @@ def format_time_hms(seconds: float) -> str:
     elif total_seconds < 3600:
         return f"{total_seconds // 60}m{total_seconds % 60:02d}s"
     return f"{total_seconds // 3600}h{(total_seconds % 3600) // 60:02d}m"
-
-
-def print_progress(
-    prefix: str, current: int, total: int, start_time: float, length: int = PROGRESS_BAR_LENGTH
-) -> None:
-    """
-    Displays a progress bar with an ETA.
-
-    Args:
-        prefix: Label for the progress bar.
-        current: Current step index.
-        total: Total number of steps.
-        start_time: Operation start timestamp.
-        length: Character length of the bar.
-    """
-    percent: float = current / total
-    filled: int = int(length * percent)
-    bar: str = "█" * filled + "-" * (length - filled)
-
-    elapsed: float = time.time() - start_time
-    rate: float = elapsed / current if current > 0 else 0
-    eta: float = rate * (total - current) if current > 0 else 0
-
-    sys.stdout.write(
-        f"\r{prefix} |{bar}| {percent*100:6.2f}%"
-        f"  ETA: {format_time_hms(eta)}"
-        f"  Elapsed: {format_time_hms(elapsed)}"
-    )
-    sys.stdout.flush()
 
 
 # --------------------------------------------------------------------
@@ -593,7 +566,7 @@ def main() -> None:
 
         global_total: int = num_ch * num_freq * num_vol * config.measurements_number
         global_counter: List[int] = [0]
-        global_start_time: float = time.time()
+        global_start_time: float = time.perf_counter()
 
         logging.info(f"Total stim cycles in sweep: {global_total}")
 
