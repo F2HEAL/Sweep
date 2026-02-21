@@ -51,7 +51,7 @@ class Config:
 
 class SerialCommunicator:
     BAUDRATE = 115200
-    TIMEOUT_SEC = 1
+    TIMEOUT_SEC = 0.1
 
     def __init__(self, port):
         self.port = port
@@ -140,35 +140,18 @@ def setup_lsl_inlet(stream_name="SynAmpsRT"):
 # --------------------------------------------------------------------
 # Recording Functions
 # --------------------------------------------------------------------
-def record_to_csv(inlet, duration, fname, marker=None, write_header=False):
-    """Record samples from LSL inlet to CSV for given duration.
-    Layout: [timestamp] + 33 EEG channels + [marker column]."""
+def record_to_csv(inlet, duration, writer, marker=None):
+    """Record samples from LSL inlet to CSV for given duration using an existing writer."""
+    start = time.time()
+    marker_written = False
 
-    mode = "a"
-    if write_header:
-        mode = "w"  # overwrite and add header
+    while time.time() - start < duration:
+        # Use pull_chunk to be more efficient than pull_sample
+        samples, timestamps = inlet.pull_chunk(timeout=0.1)
+        if not timestamps:
+            continue
 
-    with open(fname, mode, newline="") as f:
-        writer = csv.writer(f)
-
-        if write_header:
-            header = ["Timestamp"] + [f"Ch{i+1}" for i in range(33)] + ["Label"]
-            writer.writerow(header)
-
-        start = time.time()
-        marker_written = False
-
-        counter = 0
-        while time.time() - start < duration:
-
-            counter += 1
-            if counter % 5000 == 0:
-                print("   . Recording")
-
-            sample, ts = inlet.pull_sample(timeout=1.0)
-            if sample is None:
-                continue  # skip if no sample
-
+        for sample, ts in zip(samples, timestamps):
             eeg_values = sample[:33]
             label = ""
 
@@ -176,10 +159,9 @@ def record_to_csv(inlet, duration, fname, marker=None, write_header=False):
                 label = marker
                 marker_written = True
 
-            row = [ts] + eeg_values + [label]
-            writer.writerow(row)
+            writer.writerow([ts] + eeg_values + [label])
 
-        return marker_written
+    return marker_written
 
 
 def record_buffer_to_csv(inlet, fname):
@@ -259,41 +241,38 @@ def do_measurement(
     print(f"\n--- Measurement Start: CH={channel}  FREQ={frequency}  VOL={volume} ---")
 
     fname = f"./Recordings/{config.timestamp}_{config.board_id}_c{channel}_f{frequency}_v{volume}.csv"
-    streamer_params = f"file://{fname}:w"
-    # ---------------------------------------------------------
-    # Baseline 3 (with progress bar + ETA)
-    # ---------------------------------------------------------
-    baseline3_start = time.time()
-    baseline3_total = config.baseline_3
+    
+    with open(fname, "w", newline="") as f:
+        writer = csv.writer(f)
+        # ---------------------------------------------------------
+        # Baseline 3 (with progress bar + ETA)
+        # ---------------------------------------------------------
+        print("\nBaseline 3 (contact) recording...")
+        record_to_csv(inlet, config.baseline_3, writer, marker=333)
 
-    record_buffer_to_csv(inlet, fname)
-    print("\nBaseline 3 (contact) recording...")
-    record_to_csv(inlet, config.baseline_3, fname, marker=333)
+        # Stim cycles
+        cycles = config.measurements_number
+        on_dur = config.measurements_duration_on
+        off_dur = config.measurements_duration_off
 
-    # Stim cycles
-    cycles = config.measurements_number
-    on_dur = config.measurements_duration_on
-    off_dur = config.measurements_duration_off
+        print(f"\nStim cycles: {cycles} cycles (ON={on_dur}s, OFF={off_dur}s)\n")
 
-    print(f"\nStim cycles: {cycles} cycles (ON={on_dur}s, OFF={off_dur}s)\n")
+        for cycle in range(1, cycles + 1):
+            # ON
+            print(f"Cycle {cycle}/{cycles} — ON period")
+            record_to_csv(inlet, on_dur, writer, marker=0)
+            com.start_stream()
+            
+            record_to_csv(inlet, on_dur, writer, marker=1)
+            com.stop_stream()
 
-    for cycle in range(1, cycles + 1):
-        # ON
-        print(f"Cycle {cycle}/{cycles} — ON period")
-        record_to_csv(inlet, on_dur, fname, marker=0)
-        com.start_stream()
+            # OFF
+            print(f"Cycle {cycle}/{cycles} — OFF period")
+            record_to_csv(inlet, off_dur, writer, marker=11)
 
-        record_to_csv(inlet, on_dur, fname, marker=1)
-        com.stop_stream()
-
-        # OFF
-        print(f"Cycle {cycle}/{cycles} — OFF period")
-
-        record_to_csv(inlet, off_dur, fname, marker=11)
-
-        global_counter[0] += 1
-        progress_bar("Global sweep", global_counter[0], global_total, global_start_time)
-        print("\n")
+            global_counter[0] += 1
+            progress_bar("Global sweep", global_counter[0], global_total, global_start_time)
+            print("\n")
 
     print(
         f"--- Measurement Completed CH={channel}, FREQ={frequency}, VOL={volume} ---\n"
@@ -399,17 +378,18 @@ def main():
             print("\nRecording Baseline 1 (waiting for VHP ON)...")
 
             # Record baseline with marker 3
-            record_buffer_to_csv(inlet, fname1)
-            record_to_csv(inlet, 10, fname1, marker=3)
-            # record_to_csv(inlet, config.baseline_1, fname1, marker=3, write_header=True)
-
+            with open(fname1, "a", newline="") as f:
+                writer = csv.writer(f)
+                record_to_csv(inlet, 10, writer, marker=3)
+            
             while not is_vhp_connected(config.serial_port):
                 print("Waiting for VHP to power ON...")
                 time.sleep(0.5)
 
             print("\n▶ Baseline 1 started")
-            record_buffer_to_csv(inlet, fname1)
-            record_to_csv(inlet, config.baseline_1, fname1, marker=33)
+            with open(fname1, "a", newline="") as f:
+                writer = csv.writer(f)
+                record_to_csv(inlet, config.baseline_1, writer, marker=33)
 
             # countdown_eta("Baseline 1", config.baseline_1)
 
@@ -430,13 +410,14 @@ def main():
         vhpcom.start_stream()
 
         # Record baseline with marker 31
-        record_buffer_to_csv(inlet, fname2)
-        record_to_csv(inlet, config.baseline_2, fname2, marker=31)
+        with open(fname2, "a", newline="") as f:
+            writer = csv.writer(f)
+            record_to_csv(inlet, config.baseline_2, writer, marker=31)
 
-        # countdown_eta("Baseline 2", config.baseline_2)
+            # countdown_eta("Baseline 2", config.baseline_2)
 
-        vhpcom.stop_stream()
-        record_to_csv(inlet, config.baseline_2, fname2, marker=33)
+            vhpcom.stop_stream()
+            record_to_csv(inlet, config.baseline_2, writer, marker=33)
 
         print("Baseline 2 completed.\n")
 
