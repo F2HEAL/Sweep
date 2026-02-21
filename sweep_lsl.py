@@ -217,6 +217,7 @@ def record_to_csv(
 ) -> bool:
     """
     Records samples from an LSL inlet to a CSV writer for a given duration.
+    Optimized to use pull_chunk for bulk retrieval and writerows for fast I/O.
 
     Args:
         inlet: The LSL stream inlet.
@@ -230,36 +231,53 @@ def record_to_csv(
     start: float = time.time()
     marker_written: bool = False
 
-    while time.time() - start < duration:
-        # Use pull_chunk to be more efficient than pull_sample
-        samples, timestamps = inlet.pull_chunk(timeout=0.1)
-        if not timestamps:
-            continue
+    while (time.time() - start) < duration:
+        # pull_chunk(timeout=0.0) drains everything currently in the buffer.
+        # This is more efficient than pull_sample() one by one.
+        samples, timestamps = inlet.pull_chunk(timeout=0.0)
 
+        if timestamps:
+            rows: List[List[Any]] = []
+            for sample, ts in zip(samples, timestamps):
+                label: str = ""
+                if marker is not None and not marker_written:
+                    label = str(marker)
+                    marker_written = True
+
+                rows.append([ts] + sample[:EEG_CHANNELS_COUNT] + [label])
+
+            writer.writerows(rows)
+        else:
+            # Yield to the OS to minimize CPU load while waiting for data.
+            # 5ms is a safe interval that won't overflow the LSL internal buffer.
+            time.sleep(0.005)
+
+    # Perform a final drain to capture samples that arrived at the last moment.
+    samples, timestamps = inlet.pull_chunk(timeout=0.0)
+    if timestamps:
+        rows = []
         for sample, ts in zip(samples, timestamps):
-            eeg_values: List[float] = sample[:EEG_CHANNELS_COUNT]
-            label: str = ""
-
+            label = ""
             if marker is not None and not marker_written:
                 label = str(marker)
                 marker_written = True
-
-            writer.writerow([ts] + eeg_values + [label])
+            rows.append([ts] + sample[:EEG_CHANNELS_COUNT] + [label])
+        writer.writerows(rows)
 
     return marker_written
 
 
-def record_buffer_to_csv(inlet, fname):
-    """Record all available samples from an LSL inlet to a CSV file.
-    Layout: [timestamp] + 33 EEG channels + [marker column]."""
-
+def record_buffer_to_csv(inlet: StreamInlet, fname: Union[str, Path]) -> None:
+    """
+    Legacy helper to record currently available samples to a file.
+    Note: record_to_csv is now preferred for its batch processing.
+    """
     samples, timestamps = inlet.pull_chunk()
 
     if not timestamps:
         return
 
-    # Prepare rows for CSV writer
-    rows = [[ts] + sample[:33] + [""] for ts, sample in zip(timestamps, samples)]
+    rows = [[ts] + sample[:EEG_CHANNELS_COUNT] + [""] for ts, sample in zip(timestamps, samples)]
 
     with open(fname, "a", newline="") as f:
         writer = csv.writer(f)
@@ -352,11 +370,15 @@ def do_measurement(
 
     with open(fname, "w", newline="") as f:
         writer = csv.writer(f)
+        # Write header for research traceability
+        header: List[str] = ["Timestamp"] + [f"Ch{i+1}" for i in range(EEG_CHANNELS_COUNT)] + ["Label"]
+        writer.writerow(header)
+        
         # ---------------------------------------------------------
         # Baseline 3 (with progress bar + ETA)
         # ---------------------------------------------------------
-        print("\nBaseline 3 (contact) recording...")
-        record_to_csv(inlet, config.baseline_3, writer, marker=333)
+        logging.info("Baseline 3 (contact) recording...")
+        record_to_csv(inlet, float(config.baseline_3), writer, marker=333)
 
         # Stim cycles
         cycles: int = config.measurements_number
@@ -497,6 +519,8 @@ def main() -> None:
     logging.basicConfig(format="[%(asctime)s] %(message)s", level=logging.INFO)
 
     inlet: StreamInlet = setup_lsl_inlet(config.stream_name)
+    # Drain any stale data from before script execution to ensure clean baseline
+    inlet.pull_chunk(timeout=0.0)
 
     recordings_dir: Path = Path("./Recordings")
     recordings_dir.mkdir(exist_ok=True)
@@ -516,6 +540,9 @@ def main() -> None:
             # Record baseline with marker 3
             with open(fname1, "a", newline="") as f:
                 writer = csv.writer(f)
+                if fname1.stat().st_size == 0:
+                    header: List[str] = ["Timestamp"] + [f"Ch{i+1}" for i in range(EEG_CHANNELS_COUNT)] + ["Label"]
+                    writer.writerow(header)
                 record_to_csv(inlet, 10.0, writer, marker=3)
             
             while not is_vhp_connected(config.serial_port):
@@ -543,6 +570,9 @@ def main() -> None:
         # Record baseline with marker 31
         with open(fname2, "a", newline="") as f:
             writer = csv.writer(f)
+            if fname2.stat().st_size == 0:
+                header: List[str] = ["Timestamp"] + [f"Ch{i+1}" for i in range(EEG_CHANNELS_COUNT)] + ["Label"]
+                writer.writerow(header)
             record_to_csv(inlet, float(config.baseline_2), writer, marker=31)
 
             vhpcom.stop_stream()
